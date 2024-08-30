@@ -1,3 +1,7 @@
+require("newrelic");
+const Sentry = require("@sentry/node");
+const Tracing = require("@sentry/tracing");
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -18,6 +22,18 @@ app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json());
 
+Sentry.init({
+  dsn: "your_sentry_dsn",
+  integrations: [
+    new Sentry.Integrations.Http({ tracing: true }),
+    new Tracing.Integrations.Express({ app }),
+  ],
+  tracesSampleRate: 1.0,
+});
+
+app.use(Sentry.Handlers.requestHandler());
+app.use(Sentry.Handlers.tracingHandler());
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -34,6 +50,7 @@ app.use((err, req, res, next) => {
   logger.error(err.stack);
   res.status(500).send("Something went wrong!");
 });
+app.use(Sentry.Handlers.errorHandler());
 
 app.all("*", (req, res, next) => {
   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));

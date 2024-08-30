@@ -1,68 +1,56 @@
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-const { Client, resources } = require("coinbase-commerce-node");
 const axios = require("axios");
+const { Spot } = require("@binance/connector");
+const TelegramBot = require("node-telegram-bot-api");
 
-const coinbaseClient = Client.init(process.env.COINBASE_API_KEY);
-const { Charge } = resources;
+const binanceClient = new Spot(
+  process.env.BINANCE_API_KEY,
+  process.env.BINANCE_API_SECRET,
+);
+const telegramBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 
-exports.processBankPayment = async (amount, details) => {
+const supportedCryptos = ["BTC", "ETH", "USDT", "BNB"];
+
+exports.getExchangeRates = async () => {
+  const rates = {};
+  for (const crypto of supportedCryptos) {
+    const ticker = await binanceClient.tickerPrice(`${crypto}USDT`);
+    rates[crypto] = parseFloat(ticker.data.price);
+  }
+  return rates;
+};
+
+exports.processCryptoPayment = async (
+  amount,
+  cryptoCurrency,
+  walletAddress,
+) => {
   try {
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amount * 100, // Stripe uses cents
-      currency: "usd",
-      payment_method_types: ["card"],
-      payment_method: details.paymentMethodId,
-      confirm: true,
-    });
-    return { success: true, transactionId: paymentIntent.id };
+    const rates = await this.getExchangeRates();
+    const cryptoAmount = amount / rates[cryptoCurrency];
+
+    // For demonstration purposes, we'll just return a success response
+    // In a real-world scenario, you'd integrate with your crypto wallet or exchange API to make the transfer
+    return {
+      success: true,
+      cryptoAmount,
+      transactionHash: "mock_transaction_hash_" + Date.now(),
+    };
   } catch (error) {
+    console.error("Crypto payment processing error:", error);
     return { success: false, error: error.message };
   }
 };
 
-exports.processMobilePayment = async (amount, details) => {
+exports.processTelegramPayment = async (amount, telegramUserId) => {
   try {
-    // M-Pesa integration (example for Safaricom M-Pesa)
-    const response = await axios.post(
-      "https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
-      {
-        BusinessShortCode: process.env.MPESA_SHORTCODE,
-        Password: process.env.MPESA_PASSWORD,
-        Timestamp: new Date().toISOString(),
-        TransactionType: "CustomerPayBillOnline",
-        Amount: amount,
-        PartyA: details.phoneNumber,
-        PartyB: process.env.MPESA_SHORTCODE,
-        PhoneNumber: details.phoneNumber,
-        CallBackURL: `${process.env.BASE_URL}/api/payments/mpesa-callback`,
-        AccountReference: "TaskMaster Withdrawal",
-        TransactionDesc: "Withdrawal from TaskMaster",
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.MPESA_AUTH_TOKEN}`,
-        },
-      },
+    // Send a payment request message to the user via Telegram
+    await telegramBot.sendMessage(
+      telegramUserId,
+      `Please send ${amount} USDT to the following wallet address: ${process.env.COMPANY_WALLET_ADDRESS}`,
     );
-    return { success: true, transactionId: response.data.CheckoutRequestID };
+    return { success: true, status: "payment_requested" };
   } catch (error) {
-    return { success: false, error: error.message };
-  }
-};
-
-exports.processCryptoPayment = async (amount, details) => {
-  try {
-    const charge = await Charge.create({
-      name: "TaskMaster Withdrawal",
-      description: "Withdrawal from TaskMaster balance",
-      local_price: {
-        amount: amount.toString(),
-        currency: "USD",
-      },
-      pricing_type: "fixed_price",
-    });
-    return { success: true, chargeId: charge.id, chargeUrl: charge.hosted_url };
-  } catch (error) {
+    console.error("Telegram payment processing error:", error);
     return { success: false, error: error.message };
   }
 };
