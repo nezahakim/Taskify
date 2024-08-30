@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-md font-semibold text-white transition-colors duration-300;
+  }
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700;
+  }
+  .btn-secondary {
+    @apply bg-gray-600 hover:bg-gray-700;
+  }
+}
